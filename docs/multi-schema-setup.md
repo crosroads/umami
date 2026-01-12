@@ -552,8 +552,10 @@ model Pixel {
 
 | Variable | Value | Required |
 |----------|-------|----------|
-| `DATABASE_URL` | `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres` | Yes |
+| `DATABASE_URL` | `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?schema=umami` | Yes |
 | `SKIP_DB_MIGRATION` | `true` | Yes |
+
+**CRITICAL:** The `DATABASE_URL` **MUST** include `?schema=umami` at the end. Without this parameter, Umami will fail with "relation does not exist" errors. See [Troubleshooting](#error-relation-website_event-does-not-exist) for details.
 
 **Important:** `SKIP_DB_MIGRATION=true` is required to prevent the build from hanging. See [Troubleshooting](#build-hangs-after-database-version-check-successful) for details.
 
@@ -561,7 +563,9 @@ model Pixel {
 
 | Variable | Value |
 |----------|-------|
-| `DATABASE_URL` | `postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres` |
+| `DATABASE_URL` | `postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres?schema=umami` |
+
+**Note:** The `?schema=umami` parameter is required for both production and local development.
 
 ---
 
@@ -647,6 +651,43 @@ GRANT ALL ON SCHEMA umami TO postgres, anon, authenticated, service_role;
 **Solution**: Ensure both changes are made:
 1. `schemas = ["umami"]` in datasource block
 2. `@@schema("umami")` in every model
+
+### Error: relation "website_event" does not exist
+
+**Symptom**: Umami dashboard shows "Something went wrong" errors. Vercel logs show:
+```
+Error [PrismaClientKnownRequestError]:
+Invalid `prisma.$queryRawUnsafe()` invocation:
+Raw query failed. Code: `42P01`. Message: `relation "website_event" does not exist`
+```
+
+**Cause**: The `DATABASE_URL` is missing the `?schema=umami` query parameter. Even though the Prisma schema has `@@schema("umami")` annotations and the tables exist in the `umami` schema in Supabase, the Umami application code requires the schema to be specified in the connection string.
+
+**Why this happens**: Umami's Prisma client initialization (`src/lib/prisma.ts`) extracts the schema from the URL:
+
+```typescript
+function getSchema() {
+  const connectionUrl = new URL(process.env.DATABASE_URL);
+  return connectionUrl.searchParams.get('schema');  // Returns null if not in URL
+}
+
+function getClient() {
+  const schema = getSchema();
+  const baseAdapter = new PrismaPg({ connectionString: url }, { schema });  // schema is null!
+}
+```
+
+Without `?schema=umami`, `getSchema()` returns `null`, and all queries go to PostgreSQL's default `public` schema.
+
+**Solution**:
+1. Go to Vercel → Settings → Environment Variables
+2. Edit `DATABASE_URL` to include `?schema=umami`:
+   ```
+   postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?schema=umami
+   ```
+3. Redeploy the Umami project
+
+**Verified**: January 12, 2026 - This fix resolved the issue for VicSee's Umami deployment.
 
 ---
 
