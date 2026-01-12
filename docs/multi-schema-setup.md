@@ -1,3 +1,220 @@
+# Multi-Schema Setup for Umami Analytics
+
+> Blueprint for isolating Umami tables in a custom PostgreSQL schema for multi-tenant Supabase deployments.
+
+---
+
+## Overview
+
+By default, Umami creates tables in the `public` schema. This document describes how to modify Umami to use a custom `umami` schema for better isolation when sharing a Supabase database with other projects.
+
+### Why Use a Custom Schema?
+
+| Benefit | Description |
+|---------|-------------|
+| **Isolation** | Keep Umami tables separate from other project tables |
+| **Organization** | Clear separation of concerns in shared databases |
+| **Multi-tenancy** | Run multiple projects in one Supabase instance |
+| **Clean Drops** | Easy to remove all Umami tables by dropping the schema |
+
+---
+
+## Prerequisites
+
+- Supabase project with PostgreSQL database
+- Access to Supabase SQL Editor
+- Forked/cloned Umami repository
+
+---
+
+## Step 1: Create Schema in Supabase
+
+Run this SQL in Supabase **SQL Editor** before deploying:
+
+```sql
+-- Create the umami schema
+CREATE SCHEMA IF NOT EXISTS umami;
+
+-- Grant permissions (if using custom roles)
+GRANT ALL ON SCHEMA umami TO postgres;
+GRANT ALL ON SCHEMA umami TO anon;
+GRANT ALL ON SCHEMA umami TO authenticated;
+GRANT ALL ON SCHEMA umami TO service_role;
+```
+
+---
+
+## Step 2: Modify Prisma Schema
+
+Edit `prisma/schema.prisma` with the following changes:
+
+### 2.1 Update Generator Block
+
+Add `previewFeatures` for multi-schema support:
+
+```prisma
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  engineType      = "client"
+  previewFeatures = ["multiSchema"]
+}
+```
+
+### 2.2 Update Datasource Block
+
+Add `schemas` array to datasource:
+
+```prisma
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+  schemas      = ["umami"]
+}
+```
+
+### 2.3 Add @@schema to All Models
+
+Add `@@schema("umami")` to each model. The complete list of models and their modifications:
+
+#### User Model
+```prisma
+model User {
+  // ... existing fields ...
+
+  @@schema("umami")
+  @@map("user")
+}
+```
+
+#### Session Model
+```prisma
+model Session {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("session")
+}
+```
+
+#### Website Model
+```prisma
+model Website {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("website")
+}
+```
+
+#### WebsiteEvent Model
+```prisma
+model WebsiteEvent {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("website_event")
+}
+```
+
+#### EventData Model
+```prisma
+model EventData {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("event_data")
+}
+```
+
+#### SessionData Model
+```prisma
+model SessionData {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("session_data")
+}
+```
+
+#### Team Model
+```prisma
+model Team {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("team")
+}
+```
+
+#### TeamUser Model
+```prisma
+model TeamUser {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("team_user")
+}
+```
+
+#### Report Model
+```prisma
+model Report {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("report")
+}
+```
+
+#### Segment Model
+```prisma
+model Segment {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("segment")
+}
+```
+
+#### Revenue Model
+```prisma
+model Revenue {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("revenue")
+}
+```
+
+#### Link Model
+```prisma
+model Link {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("link")
+}
+```
+
+#### Pixel Model
+```prisma
+model Pixel {
+  // ... existing fields and indexes ...
+
+  @@schema("umami")
+  @@map("pixel")
+}
+```
+
+---
+
+## Step 3: Full Modified Schema Reference
+
+Below is the complete modified `prisma/schema.prisma` file:
+
+```prisma
 generator client {
   provider        = "prisma-client"
   output          = "../src/generated/prisma"
@@ -331,3 +548,115 @@ model Pixel {
   @@schema("umami")
   @@map("pixel")
 }
+```
+
+---
+
+## Step 4: Environment Variables
+
+### For Vercel (Production)
+
+Use the Supavisor pooler connection string:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres` |
+
+### For Local Development
+
+Use the direct connection string:
+
+| Variable | Value |
+|----------|-------|
+| `DATABASE_URL` | `postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres` |
+
+---
+
+## Step 5: Deploy
+
+### Option A: Push to GitHub (Vercel Auto-Deploy)
+
+```bash
+git add .
+git commit -m "feat: use custom umami schema for multi-tenant isolation"
+git push origin main
+```
+
+Vercel will automatically deploy.
+
+### Option B: Manual Vercel Deploy
+
+1. Go to [vercel.com/new](https://vercel.com/new)
+2. Import your forked repository
+3. Add `DATABASE_URL` environment variable
+4. Deploy
+
+---
+
+## Verification
+
+After deployment, verify tables are in the `umami` schema:
+
+1. Go to Supabase **Table Editor**
+2. Click the schema dropdown (usually shows "public")
+3. Select "umami"
+4. You should see: `user`, `session`, `website`, `website_event`, etc.
+
+Or run this SQL:
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'umami';
+```
+
+---
+
+## Troubleshooting
+
+### Error: Schema "umami" does not exist
+
+**Solution**: Run the CREATE SCHEMA SQL in Supabase before deploying.
+
+### Error: Permission denied for schema umami
+
+**Solution**: Grant permissions to the necessary roles:
+```sql
+GRANT ALL ON SCHEMA umami TO postgres, anon, authenticated, service_role;
+```
+
+### Tables created in public instead of umami
+
+**Solution**: Ensure both changes are made:
+1. `schemas = ["umami"]` in datasource block
+2. `@@schema("umami")` in every model
+
+---
+
+## Updating Umami
+
+When pulling updates from upstream:
+
+1. Sync your fork on GitHub
+2. Pull changes locally: `git pull origin main`
+3. Check if new models were added to `schema.prisma`
+4. Add `@@schema("umami")` to any new models
+5. Push and redeploy
+
+---
+
+## Related Files
+
+| File | Purpose |
+|------|---------|
+| `prisma/schema.prisma` | Database schema definition |
+| `prisma.config.ts` | Prisma configuration |
+| `.env` / `.env.local` | Environment variables (local) |
+
+---
+
+## References
+
+- [Prisma Multi-Schema Documentation](https://www.prisma.io/docs/orm/prisma-schema/data-model/multi-schema)
+- [Supabase Connection Pooling](https://supabase.com/docs/guides/database/connecting-to-postgres#connection-pooler)
+- [Umami Self-Hosting Guide](https://umami.is/docs/install)
