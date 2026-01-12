@@ -27,20 +27,14 @@ By default, Umami creates tables in the `public` schema. This document describes
 
 ---
 
-## Step 1: Create Schema in Supabase
+## Step 1: Run Migration SQL in Supabase
 
-Run this SQL in Supabase **SQL Editor** before deploying:
+Run the SQL from `docs/migration.sql` in Supabase **SQL Editor**. This will:
+- Create the `umami` schema
+- Create all 13 tables with indexes
+- Create the default admin user (`admin` / `umami`)
 
-```sql
--- Create the umami schema
-CREATE SCHEMA IF NOT EXISTS umami;
-
--- Grant permissions (if using custom roles)
-GRANT ALL ON SCHEMA umami TO postgres;
-GRANT ALL ON SCHEMA umami TO anon;
-GRANT ALL ON SCHEMA umami TO authenticated;
-GRANT ALL ON SCHEMA umami TO service_role;
-```
+See [migration.sql](./migration.sql) for the complete script.
 
 ---
 
@@ -556,15 +550,14 @@ model Pixel {
 
 ### For Vercel (Production)
 
-Use the Supavisor pooler connection string:
+| Variable | Value | Required |
+|----------|-------|----------|
+| `DATABASE_URL` | `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres` | Yes |
+| `SKIP_DB_MIGRATION` | `true` | Yes |
 
-| Variable | Value |
-|----------|-------|
-| `DATABASE_URL` | `postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres` |
+**Important:** `SKIP_DB_MIGRATION=true` is required to prevent the build from hanging. See [Troubleshooting](#build-hangs-after-database-version-check-successful) for details.
 
 ### For Local Development
-
-Use the direct connection string:
 
 | Variable | Value |
 |----------|-------|
@@ -614,9 +607,33 @@ WHERE table_schema = 'umami';
 
 ## Troubleshooting
 
+### Build hangs after "Database version check successful"
+
+**Symptom**: Vercel build hangs indefinitely after showing:
+```
+✓ DATABASE_URL is defined.
+✓ Database connection successful.
+✓ Database version check successful.
+```
+
+**Cause**: This is a [known issue with Umami v3.0.3](https://github.com/umami-software/umami/issues/3914). The `prisma migrate deploy` command in `scripts/check-db.js` hangs when using a custom schema because the existing migrations were written for the `public` schema.
+
+**Solution**:
+1. Add environment variable in Vercel: `SKIP_DB_MIGRATION=true`
+2. Run `docs/migration.sql` manually in Supabase SQL Editor to create tables
+3. Redeploy
+
+### Error: "Failed to execute 'json' on 'Response': Unexpected end of JSON input"
+
+**Symptom**: Login page shows this error when trying to log in.
+
+**Cause**: Database tables don't exist. This happens when `SKIP_DB_MIGRATION=true` is set but the migration SQL wasn't run.
+
+**Solution**: Run `docs/migration.sql` in Supabase SQL Editor to create all tables and the default admin user.
+
 ### Error: Schema "umami" does not exist
 
-**Solution**: Run the CREATE SCHEMA SQL in Supabase before deploying.
+**Solution**: Run `docs/migration.sql` in Supabase SQL Editor - it includes the CREATE SCHEMA statement.
 
 ### Error: Permission denied for schema umami
 
